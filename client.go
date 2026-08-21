@@ -13,7 +13,7 @@ type Client struct {
 	send chan []byte
 }
 
-func (c *Client) readPump() {
+func (c *Client) ReadPump() {
 	defer func() {
 		c.hub.unregister <- c
 		c.conn.Close()
