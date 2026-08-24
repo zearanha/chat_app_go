@@ -30,13 +30,24 @@ func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	room := r.URL.Query().Get("room")
+	if room == "" {
+		room = "geral" // sala padrão
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err)
 		return
 	}
 
-	client := &Client{hub: hub, conn: conn, send: make(chan []byte, 256), username: claims.Username}
+	client := &Client{
+		hub:      hub,
+		conn:     conn,
+		send:     make(chan []byte, 256),
+		username: claims.Username,
+		room:     room,
+	}
 	client.hub.register <- client
 
 	go sendHistory(hub, client)
@@ -46,7 +57,7 @@ func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 }
 
 func sendHistory(hub *Hub, client *Client) {
-	messages, err := hub.store.RecentMessages(context.Background(), 20)
+	messages, err := hub.store.RecentMessages(context.Background(), client.room, 20)
 	if err != nil {
 		log.Println("erro ao buscar histórico:", err)
 		return

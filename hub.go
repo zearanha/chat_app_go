@@ -8,6 +8,7 @@ import (
 
 type broadcastMessage struct {
 	username string
+	room     string
 	content  string
 }
 
@@ -42,7 +43,7 @@ func (h *Hub) run() {
 			}
 
 		case bm := <-h.broadcast:
-			msg, err := h.store.SaveMessage(context.Background(), bm.username, bm.content)
+			msg, err := h.store.SaveMessage(context.Background(), bm.username, bm.room, bm.content)
 			if err != nil {
 				log.Println("erro ao salvar mensagem:", err)
 				continue
@@ -54,7 +55,11 @@ func (h *Hub) run() {
 				continue
 			}
 
+			// envia só para clientes da mesma sala
 			for client := range h.clients {
+				if client.room != bm.room {
+					continue
+				}
 				select {
 				case client.send <- payload:
 				default:

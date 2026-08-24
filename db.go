@@ -13,6 +13,7 @@ import (
 type Message struct {
 	ID        string    `bson:"_id,omitempty" json:"id,omitempty"`
 	Username  string    `bson:"username" json:"username"`
+	Room      string    `bson:"room" json:"room"`
 	Content   string    `bson:"content" json:"content"`
 	CreatedAt time.Time `bson:"created_at" json:"created_at"`
 }
@@ -39,6 +40,12 @@ func newStore(ctx context.Context, uri string) (*Store, error) {
 	}
 
 	db := client.Database("chatdb")
+	_, err = db.Collection("messages").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{{Key: "room", Value: 1}, {Key: "created_at", Value: -1}},
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	usersColl := db.Collection("users")
 	_, err = usersColl.Indexes().CreateOne(ctx, mongo.IndexModel{
@@ -50,8 +57,9 @@ func newStore(ctx context.Context, uri string) (*Store, error) {
 	}
 
 	return &Store{
-		messages: db.Collection("messages"),
-		users:    usersColl,
+		collection: db.Collection("messages"),
+		messages:   db.Collection("messages"),
+		users:      usersColl,
 	}, nil
 }
 
@@ -79,9 +87,10 @@ func (s *Store) FindUserByUsername(ctx context.Context, username string) (*User,
 	return &user, nil
 }
 
-func (s *Store) SaveMessage(ctx context.Context, username, content string) (Message, error) {
+func (s *Store) SaveMessage(ctx context.Context, username, room, content string) (Message, error) {
 	msg := Message{
 		Username:  username,
+		Room:      room,
 		Content:   content,
 		CreatedAt: time.Now(),
 	}
@@ -97,26 +106,42 @@ func (s *Store) SaveMessage(ctx context.Context, username, content string) (Mess
 }
 
 
-func (s *Store) RecentMessages(ctx context.Context, limit int64) ([]Message, error) {
+func (s *Store) RecentMessages(ctx context.Context, room string, limit int64) ([]Message, error) {
 	opts := options.Find().
 		SetSort(bson.D{{Key: "created_at", Value: -1}}).
 		SetLimit(limit)
-	cursor, err := s.collection.Find(ctx, bson.D{}, opts)
+
+	filter := bson.D{{Key: "room", Value: room}}
+
+	cursor, err := s.messages.Find(ctx, filter, opts)
 	if err != nil {
 		return nil, err
 	}
 	defer cursor.Close(ctx)
 
 	var messages []Message
-
 	if err := cursor.All(ctx, &messages); err != nil {
 		return nil, err
 	}
-
 
 	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
 		messages[i], messages[j] = messages[j], messages[i]
 	}
 
 	return messages, nil
+}
+
+func (s *Store) ListRooms(ctx context.Context) ([]string, error) {
+	rooms, err := s.messages.Distinct(ctx, "room", bson.D{})
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]string, 0, len(rooms))
+	for _, r := range rooms {
+		if str, ok := r.(string); ok {
+			result = append(result, str)
+		}
+	}
+	return result, nil
 }

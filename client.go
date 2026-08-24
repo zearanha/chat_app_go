@@ -12,6 +12,7 @@ type Client struct {
 	conn     *websocket.Conn
 	send     chan []byte
 	username string
+	room string
 }
 
 func (c *Client) readPump() {
@@ -28,7 +29,11 @@ func (c *Client) readPump() {
 			}
 			break
 		}
-		c.hub.broadcast <- broadcastMessage{username: c.username, content: string(message)}
+		c.hub.broadcast <- broadcastMessage{
+			username: c.username,
+			room:     c.room,
+			content:  string(message),
+		}
 	}
 }
 
