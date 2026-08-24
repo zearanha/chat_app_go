@@ -1,12 +1,21 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 )
 
 func main() {
-	hub := newHub()
+	ctx := context.Background()
+
+	uri := "mongodb://localhost:27017"
+	store, err := newStore(ctx, uri)
+	if err != nil {
+		log.Fatal("erro ao conectar no MongoDB:", err)
+	}
+
+	hub := newHub(store)
 	go hub.run()
 
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
@@ -15,5 +24,4 @@ func main() {
 
 	log.Println("Servidor rodando em :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
-
 }

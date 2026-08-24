@@ -1,18 +1,26 @@
 package main
 
+import (
+	"context"
+	"encoding/json"
+	"log"
+)
+
 type Hub struct {
-	clients map[*Client]bool
-	broadcast chan[]byte
-	register chan *Client
+	clients    map[*Client]bool
+	broadcast  chan []byte
+	register   chan *Client
 	unregister chan *Client
+	store      *Store
 }
 
-func newHub() *Hub {
+func newHub(store *Store) *Hub {
 	return &Hub{
-		clients: make(map[*Client]bool),
-		broadcast: make(chan[]byte),
-		register: make(chan *Client),
+		clients:    make(map[*Client]bool),
+		broadcast:  make(chan []byte),
+		register:   make(chan *Client),
 		unregister: make(chan *Client),
+		store:      store,
 	}
 }
 
@@ -21,16 +29,29 @@ func (h *Hub) run() {
 		select {
 		case client := <-h.register:
 			h.clients[client] = true
-		
+
 		case client := <-h.unregister:
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
 				close(client.send)
 			}
-		case message := <- h.broadcast: 
+
+		case message := <-h.broadcast:
+			msg, err := h.store.SaveMessage(context.Background(), string(message))
+			if err != nil {
+				log.Println("erro ao salvar mensagem:", err)
+				continue
+			}
+
+			payload, err := json.Marshal(msg)
+			if err != nil {
+				log.Println("erro ao serializar mensagem:", err)
+				continue
+			}
+
 			for client := range h.clients {
 				select {
-				case client.send <- message:
+				case client.send <- payload:
 				default:
 					close(client.send)
 					delete(h.clients, client)
