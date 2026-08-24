@@ -6,9 +6,14 @@ import (
 	"log"
 )
 
+type broadcastMessage struct {
+	username string
+	content  string
+}
+
 type Hub struct {
 	clients    map[*Client]bool
-	broadcast  chan []byte
+	broadcast  chan broadcastMessage
 	register   chan *Client
 	unregister chan *Client
 	store      *Store
@@ -17,7 +22,7 @@ type Hub struct {
 func newHub(store *Store) *Hub {
 	return &Hub{
 		clients:    make(map[*Client]bool),
-		broadcast:  make(chan []byte),
+		broadcast:  make(chan broadcastMessage),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		store:      store,
@@ -36,8 +41,8 @@ func (h *Hub) run() {
 				close(client.send)
 			}
 
-		case message := <-h.broadcast:
-			msg, err := h.store.SaveMessage(context.Background(), string(message))
+		case bm := <-h.broadcast:
+			msg, err := h.store.SaveMessage(context.Background(), bm.username, bm.content)
 			if err != nil {
 				log.Println("erro ao salvar mensagem:", err)
 				continue

@@ -12,15 +12,24 @@ import (
 
 type Message struct {
 	ID        string    `bson:"_id,omitempty" json:"id,omitempty"`
+	Username  string    `bson:"username" json:"username"`
 	Content   string    `bson:"content" json:"content"`
 	CreatedAt time.Time `bson:"created_at" json:"created_at"`
 }
 
-type Store struct{
-	collection *mongo.Collection
+type User struct {
+	ID           string `bson:"_id,omitempty" json:"id,omitempty"`
+	Username     string `bson:"username" json:"username"`
+	PasswordHash string `bson:"password_hash" json:"-"`
 }
 
-func newStore(ctx context.Context, uri string) (*Store, error){
+type Store struct{
+	collection *mongo.Collection
+	messages *mongo.Collection
+	users    *mongo.Collection
+}
+
+func newStore(ctx context.Context, uri string) (*Store, error) {
 	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
 	if err != nil {
 		return nil, err
@@ -29,21 +38,58 @@ func newStore(ctx context.Context, uri string) (*Store, error){
 		return nil, err
 	}
 
-	collection := client.Database("chatdb").Collection("messages")
-	return &Store{collection: collection}, nil
+	db := client.Database("chatdb")
+
+	usersColl := db.Collection("users")
+	_, err = usersColl.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "username", Value: 1}},
+		Options: options.Index().SetUnique(true),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &Store{
+		messages: db.Collection("messages"),
+		users:    usersColl,
+	}, nil
 }
 
-func (s *Store) SaveMessage(ctx context.Context, content string) (Message, error){
-	msg := Message {
-		Content: content,
+func (s *Store) CreateUser(ctx context.Context, username, passwordHash string) (User, error) {
+	user := User{Username: username, PasswordHash: passwordHash}
+	result, err := s.users.InsertOne(ctx, user)
+	if err != nil {
+		return user, err
+	}
+	if oid, ok := result.InsertedID.(interface{ Hex() string }); ok {
+		user.ID = oid.Hex()
+	}
+	return user, nil
+}
+
+func (s *Store) FindUserByUsername(ctx context.Context, username string) (*User, error) {
+	var user User
+	err := s.users.FindOne(ctx, bson.D{{Key: "username", Value: username}}).Decode(&user)
+	if err == mongo.ErrNoDocuments {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (s *Store) SaveMessage(ctx context.Context, username, content string) (Message, error) {
+	msg := Message{
+		Username:  username,
+		Content:   content,
 		CreatedAt: time.Now(),
 	}
 
-	result, err := s.collection.InsertOne(ctx, msg)
+	result, err := s.messages.InsertOne(ctx, msg)
 	if err != nil {
 		return msg, err
 	}
-
 	if oid, ok := result.InsertedID.(interface{ Hex() string }); ok {
 		msg.ID = oid.Hex()
 	}

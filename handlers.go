@@ -18,13 +18,25 @@ var upgrader = websocket.Upgrader{
 }
 
 func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
+	tokenString := r.URL.Query().Get("token")
+	if tokenString == "" {
+		http.Error(w, "token ausente", http.StatusUnauthorized)
+		return
+	}
+
+	claims, err := validateToken(tokenString)
+	if err != nil {
+		http.Error(w, "token inválido", http.StatusUnauthorized)
+		return
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err)
 		return
 	}
 
-	client := &Client{hub: hub, conn: conn, send: make(chan []byte, 256)}
+	client := &Client{hub: hub, conn: conn, send: make(chan []byte, 256), username: claims.Username}
 	client.hub.register <- client
 
 	go sendHistory(hub, client)

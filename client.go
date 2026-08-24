@@ -8,9 +8,10 @@ import (
 )
 
 type Client struct {
-	hub  *Hub
-	conn *websocket.Conn
-	send chan []byte
+	hub      *Hub
+	conn     *websocket.Conn
+	send     chan []byte
+	username string
 }
 
 func (c *Client) readPump() {
@@ -27,7 +28,7 @@ func (c *Client) readPump() {
 			}
 			break
 		}
-		c.hub.broadcast <- message
+		c.hub.broadcast <- broadcastMessage{username: c.username, content: string(message)}
 	}
 }
 

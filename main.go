@@ -18,6 +18,8 @@ func main() {
 	hub := newHub(store)
 	go hub.run()
 
+	http.HandleFunc("/register", registerHandler(store))
+	http.HandleFunc("/login", loginHandler(store))
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		serveWs(hub, w, r)
 	})
