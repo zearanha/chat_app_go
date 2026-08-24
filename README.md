@@ -1,6 +1,6 @@
 # Chat em Tempo Real com WebSocket em Go
 
-Servidor de chat em tempo real construído em Go puro (+ Gorilla WebSocket), usando o padrão **Hub** para gerenciar conexões concorrentes sem race conditions — via channels, não mutexes.
+Servidor de chat em tempo real construído em Go puro (+ Gorilla WebSocket), usando o padrão **Hub** para gerenciar conexões concorrentes sem race conditions — via channels, não mutexes. Persistência com MongoDB, autenticação via JWT e suporte a múltiplas salas.
 
 ## ✨ Motivação
 
@@ -13,13 +13,16 @@ Em vez de proteger um mapa de clientes com `sync.Mutex`, toda a lógica de estad
 ## 🏗️ Arquitetura
 
 ```
-Cliente A (WS) ─┐
-Cliente B (WS) ─┼──> Hub (goroutine central) ──> Broadcast para todos os clientes
-Cliente C (WS) ─┘
+Cliente A (WS, sala X) ─┐
+Cliente B (WS, sala X) ─┼──> Hub (goroutine central) ──> Broadcast filtrado por sala
+Cliente C (WS, sala Y) ─┘                                        │
+                                                             MongoDB (mensagens + usuários)
 ```
 
-- **Hub**: centraliza registro/remoção de clientes e broadcast de mensagens
-- **Client**: cada conexão roda duas goroutines dedicadas —`readPump` (lê do WebSocket) e `writePump` (escreve no WebSocket)
+- **Hub**: centraliza registro/remoção de clientes e broadcast de mensagens, filtrando por sala (`room`)
+- **Client**: cada conexão roda duas goroutines dedicadas — `readPump` (lê do WebSocket) e `writePump` (escreve no WebSocket)
+- **Store**: camada de acesso ao MongoDB — mensagens (com histórico por sala) e usuários (com senha em hash)
+- **Auth**: registro/login via REST, geração e validação de JWT; conexão WebSocket exige token válido
 - Comunicação entre Hub e Clients é feita 100% via channels (`register`, `unregister`, `broadcast`, `send`)
 
 ## 📂 Estrutura do projeto
@@ -27,64 +30,83 @@ Cliente C (WS) ─┘
 ```
 chat-app/
 ├── go.mod
-├── main.go       # inicializa o servidor HTTP e o Hub
-├── hub.go        # lógica central de gerenciamento de clientes
-├── client.go     # readPump / writePump de cada conexão
-└── handlers.go   # upgrade de HTTP para WebSocket
+├── cmd/
+│   └── server/
+│       └── main.go          # bootstrap do servidor HTTP, Store e Hub
+└── internal/
+    ├── auth/                # hash de senha e geração/validação de JWT
+    ├── chat/                # Hub, Client e fluxo WebSocket
+    ├── httpapi/             # rotas HTTP, auth handlers e handler WebSocket
+    └── store/               # acesso ao MongoDB, mensagens e usuários
 ```
 
 ## 🚀 Como rodar
 
+**Pré-requisitos:** Go instalado, MongoDB rodando localmente (`mongodb://localhost:27017`).
+
 ```bash
-git clone <repo>
-cd chat-app
+git clone https://github.com/zearanha/chat_app_go
+cd chat_app_go
 go mod tidy
-go run .
+go run ./cmd/server
 ```
 
-O servidor sobe em `http://localhost:8080`, com o endpoint WebSocket em `ws://localhost:8080/ws`.
+O servidor sobe em `http://localhost:8080`.
+
+## 📡 Endpoints
+
+| Método | Rota        | Descrição                                    |
+|--------|-------------|-----------------------------------------------|
+| POST   | `/register` | Cria um novo usuário e retorna um token JWT   |
+| POST   | `/login`    | Autentica um usuário e retorna um token JWT   |
+| GET    | `/rooms`    | Lista as salas com mensagens existentes       |
+| GET    | `/ws`       | Upgrade para WebSocket (requer `token` e `room` via query string) |
 
 ## 🧪 Como testar
 
-**Via console do navegador:**
+**1. Registrar usuário:**
+
+```powershell
+Invoke-RestMethod -Uri http://localhost:8080/register -Method Post -Body '{"username":"jose","password":"senha123"}' -ContentType "application/json"
+```
+
+**2. Conectar no WebSocket com token e sala (console do navegador):**
 
 ```javascript
-const ws = new WebSocket("ws://localhost:8080/ws");
+const token = "TOKEN_RECEBIDO_NO_REGISTRO_OU_LOGIN";
+const ws = new WebSocket(`ws://localhost:8080/ws?token=${token}&room=golang`);
+
 ws.onmessage = (event) => console.log("Recebido:", event.data);
-ws.send("oi do navegador");
+ws.send("primeira mensagem na sala golang");
 ```
 
-Abra múltiplas abas para simular vários clientes trocando mensagens.
-
-**Via `wscat`:**
-
-```bash
-npm install -g wscat
-wscat -c ws://localhost:8080/ws
-```
+Abra múltiplas abas com salas diferentes (`room=golang` vs `room=geral`) para confirmar o isolamento entre elas.
 
 ## ✅ Validação de concorrência
 
 O projeto foi testado com a flag `-race` do Go, simulando múltiplos clientes enviando mensagens simultaneamente:
 
 ```bash
-go run -race .
+go run -race ./cmd/server
 ```
 
 Nenhuma race condition é esperada, já que o `map[*Client]bool` só é acessado dentro da goroutine `Hub.run()`.
 
-## 🛣️ Roadmap (próximas fases)
+## 🛣️ Roadmap
 
-- [ ] Persistência de mensagens (PostgreSQL)
-- [ ] Autenticação de usuários (JWT)
-- [ ] Salas de chat (rooms) separadas
-- [ ] Escala horizontal com Redis Pub/Sub
-- [ ] Indicador de "digitando..." e presença online
+- [x] Comunicação em tempo real via WebSocket (padrão Hub)
+- [x] Persistência de mensagens (MongoDB)
+- [x] Autenticação de usuários (JWT)
+- [x] Salas de chat (rooms) separadas com histórico próprio
+- [ ] Escala horizontal com Redis Pub/Sub *(fora do escopo por ora)*
 
 ## 🛠️ Tecnologias
 
 - [Go](https://go.dev/)
 - [gorilla/websocket](https://github.com/gorilla/websocket)
+- [MongoDB Go Driver](https://www.mongodb.com/docs/drivers/go/current/)
+- [golang-jwt](https://github.com/golang-jwt/jwt)
+- [bcrypt](https://pkg.go.dev/golang.org/x/crypto/bcrypt)
 
 ## 📚 Aprendizados
 
@@ -92,3 +114,6 @@ Nenhuma race condition é esperada, já que o `map[*Client]bool` só é acessado
 - Diferença entre `readPump` e `writePump` rodando em paralelo por conexão
 - Handshake HTTP → WebSocket e por que ele não funciona direto pela barra de endereço do navegador
 - Broadcast eficiente para múltiplos clientes com tratamento de clientes lentos/desconectados
+- Persistência de dados com MongoDB (índices, filtros, ordenação)
+- Autenticação stateless com JWT e proteção de conexões WebSocket via token
+- Isolamento de mensagens por sala reaproveitando um único Hub central

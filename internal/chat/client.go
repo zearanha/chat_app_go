@@ -1,4 +1,4 @@
-package main
+package chat
 
 import (
 	"log"
@@ -12,7 +12,32 @@ type Client struct {
 	conn     *websocket.Conn
 	send     chan []byte
 	username string
-	room string
+	room     string
+}
+
+func NewClient(hub *Hub, conn *websocket.Conn, username, room string) *Client {
+	return &Client{
+		hub:      hub,
+		conn:     conn,
+		send:     make(chan []byte, 256),
+		username: username,
+		room:     room,
+	}
+}
+
+func (c *Client) Start() {
+	c.hub.register <- c
+
+	go c.writePump()
+	go c.readPump()
+}
+
+func (c *Client) Send(payload []byte) {
+	c.send <- payload
+}
+
+func (c *Client) Room() string {
+	return c.room
 }
 
 func (c *Client) readPump() {

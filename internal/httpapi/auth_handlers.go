@@ -1,9 +1,12 @@
-package main
+package httpapi
 
 import (
 	"context"
 	"encoding/json"
 	"net/http"
+
+	"github.com/zearanha/chat_app_go/internal/auth"
+	"github.com/zearanha/chat_app_go/internal/store"
 )
 
 type authRequest struct {
@@ -15,15 +18,15 @@ type authResponse struct {
 	Token string `json:"token"`
 }
 
-func registerHandler(store *Store) http.HandlerFunc {
+func registerHandler(store *store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req authRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "corpo inválido", http.StatusBadRequest)
+			http.Error(w, "corpo invalido", http.StatusBadRequest)
 			return
 		}
 		if req.Username == "" || req.Password == "" {
-			http.Error(w, "username e password são obrigatórios", http.StatusBadRequest)
+			http.Error(w, "username e password sao obrigatorios", http.StatusBadRequest)
 			return
 		}
 
@@ -33,22 +36,22 @@ func registerHandler(store *Store) http.HandlerFunc {
 			return
 		}
 		if existing != nil {
-			http.Error(w, "usuário já existe", http.StatusConflict)
+			http.Error(w, "usuario ja existe", http.StatusConflict)
 			return
 		}
 
-		hash, err := hashPassword(req.Password)
+		hash, err := auth.HashPassword(req.Password)
 		if err != nil {
 			http.Error(w, "erro interno", http.StatusInternalServerError)
 			return
 		}
 
 		if _, err := store.CreateUser(context.Background(), req.Username, hash); err != nil {
-			http.Error(w, "erro ao criar usuário", http.StatusInternalServerError)
+			http.Error(w, "erro ao criar usuario", http.StatusInternalServerError)
 			return
 		}
 
-		token, err := generateToken(req.Username)
+		token, err := auth.GenerateToken(req.Username)
 		if err != nil {
 			http.Error(w, "erro ao gerar token", http.StatusInternalServerError)
 			return
@@ -59,26 +62,26 @@ func registerHandler(store *Store) http.HandlerFunc {
 	}
 }
 
-func loginHandler(store *Store) http.HandlerFunc {
+func loginHandler(store *store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req authRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "corpo inválido", http.StatusBadRequest)
+			http.Error(w, "corpo invalido", http.StatusBadRequest)
 			return
 		}
 
 		user, err := store.FindUserByUsername(context.Background(), req.Username)
 		if err != nil || user == nil {
-			http.Error(w, "credenciais inválidas", http.StatusUnauthorized)
+			http.Error(w, "credenciais invalidas", http.StatusUnauthorized)
 			return
 		}
 
-		if !checkPassword(req.Password, user.PasswordHash) {
-			http.Error(w, "credenciais inválidas", http.StatusUnauthorized)
+		if !auth.CheckPassword(req.Password, user.PasswordHash) {
+			http.Error(w, "credenciais invalidas", http.StatusUnauthorized)
 			return
 		}
 
-		token, err := generateToken(req.Username)
+		token, err := auth.GenerateToken(req.Username)
 		if err != nil {
 			http.Error(w, "erro ao gerar token", http.StatusInternalServerError)
 			return

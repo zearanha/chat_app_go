@@ -1,9 +1,8 @@
-package main
+package store
 
-import ( 
+import (
 	"context"
 	"time"
-
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -24,13 +23,12 @@ type User struct {
 	PasswordHash string `bson:"password_hash" json:"-"`
 }
 
-type Store struct{
-	collection *mongo.Collection
+type Store struct {
 	messages *mongo.Collection
 	users    *mongo.Collection
 }
 
-func newStore(ctx context.Context, uri string) (*Store, error) {
+func New(ctx context.Context, uri string) (*Store, error) {
 	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
 	if err != nil {
 		return nil, err
@@ -40,7 +38,9 @@ func newStore(ctx context.Context, uri string) (*Store, error) {
 	}
 
 	db := client.Database("chatdb")
-	_, err = db.Collection("messages").Indexes().CreateOne(ctx, mongo.IndexModel{
+	messagesColl := db.Collection("messages")
+
+	_, err = messagesColl.Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys: bson.D{{Key: "room", Value: 1}, {Key: "created_at", Value: -1}},
 	})
 	if err != nil {
@@ -57,9 +57,8 @@ func newStore(ctx context.Context, uri string) (*Store, error) {
 	}
 
 	return &Store{
-		collection: db.Collection("messages"),
-		messages:   db.Collection("messages"),
-		users:      usersColl,
+		messages: messagesColl,
+		users:    usersColl,
 	}, nil
 }
 
@@ -104,7 +103,6 @@ func (s *Store) SaveMessage(ctx context.Context, username, room, content string)
 	}
 	return msg, nil
 }
-
 
 func (s *Store) RecentMessages(ctx context.Context, room string, limit int64) ([]Message, error) {
 	opts := options.Find().

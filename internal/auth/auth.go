@@ -1,4 +1,4 @@
-package main
+package auth
 
 import (
 	"errors"
@@ -15,16 +15,16 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-func hashPassword(password string) (string, error) {
+func HashPassword(password string) (string, error) {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	return string(bytes), err
 }
 
-func checkPassword(password, hash string) bool {
+func CheckPassword(password, hash string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
 
-func generateToken(username string) (string, error) {
+func GenerateToken(username string) (string, error) {
 	claims := Claims{
 		Username: username,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -37,12 +37,12 @@ func generateToken(username string) (string, error) {
 	return token.SignedString(jwtSecret)
 }
 
-func validateToken(tokenString string) (*Claims, error) {
+func ValidateToken(tokenString string) (*Claims, error) {
 	claims := &Claims{}
 
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.New("método de assinatura inesperado")
+			return nil, errors.New("metodo de assinatura inesperado")
 		}
 		return jwtSecret, nil
 	})
@@ -50,7 +50,7 @@ func validateToken(tokenString string) (*Claims, error) {
 		return nil, err
 	}
 	if !token.Valid {
-		return nil, errors.New("token inválido")
+		return nil, errors.New("token invalido")
 	}
 	return claims, nil
 }

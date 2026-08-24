@@ -1,9 +1,11 @@
-package main
+package chat
 
 import (
 	"context"
 	"encoding/json"
 	"log"
+
+	"github.com/zearanha/chat_app_go/internal/store"
 )
 
 type broadcastMessage struct {
@@ -17,10 +19,10 @@ type Hub struct {
 	broadcast  chan broadcastMessage
 	register   chan *Client
 	unregister chan *Client
-	store      *Store
+	store      *store.Store
 }
 
-func newHub(store *Store) *Hub {
+func NewHub(store *store.Store) *Hub {
 	return &Hub{
 		clients:    make(map[*Client]bool),
 		broadcast:  make(chan broadcastMessage),
@@ -30,7 +32,7 @@ func newHub(store *Store) *Hub {
 	}
 }
 
-func (h *Hub) run() {
+func (h *Hub) Run() {
 	for {
 		select {
 		case client := <-h.register:
@@ -55,7 +57,6 @@ func (h *Hub) run() {
 				continue
 			}
 
-			// envia só para clientes da mesma sala
 			for client := range h.clients {
 				if client.room != bm.room {
 					continue
